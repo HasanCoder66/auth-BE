@@ -1,0 +1,199 @@
+import { User } from "../models/userSchema.js";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import { v4 as uuidv4 } from "uuid";
+
+import { successResponse } from "../responseHandler/successHandler.js";
+import { sendEmailOTP } from "../services/sendEmail.js";
+
+const login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) return res.status(400).json({
+        status: false,
+        message: "All Fields are required!",
+      });;
+
+    let myUser = await User.findOne({ email: email });
+
+    if (!myUser) return res.status(400).json({
+        status: false,
+        message: "User not found!",
+      });;
+
+    bcrypt.compare(password, myUser.password, function (err, result) {
+      try {
+        if (result) {
+          const token = jwt.sign(
+            { email: myUser.email, id: myUser._id }, // payload
+            process.env.JWT_SECRET_KEY, // secret key
+            // {expiresIn:"1h"}                                      // token expiry
+            { expiresIn: 1 * 60 }, // token expiry
+          );
+          successResponse(
+            res,
+            200,
+            true,
+            "User logged In  Successfully",
+            myUser,
+            token,
+          );
+        } else {
+          return res.status(400).json({
+        status: false,
+        message: "Invalid credentials!",
+      });;
+        }
+      } catch (error) {
+        next(error);
+      }
+      // result == true
+    });
+
+    // if (myUser.password != password) throw new Error("Invalid credientials");
+  } catch (error) {
+    next(error);
+  }
+};
+
+const signup = async (req, res, next) => {
+  try {
+    console.log(req.body);
+
+    // let user ;
+    const { age, email, password, userName } = req.body;
+
+    console.log(age, email, password, userName)
+
+    // if(!user) throw new Error("user nhi hai...")
+    if ( !email || !password || !userName || !age)
+      return res.status(400).json({
+        status: false,
+        message: "All Fields are required!",
+      });
+
+      // const alreadyUser = await User.findOne({email})
+
+      // if(!alreadyUser) res.status(400).json({
+      //   status : false,
+      //   message : "User already registerd"
+      // })
+
+
+    const hashedPassword = await bcrypt.hash(password, 12)
+
+
+     const otp = uuidv4().slice(0, 4); // 8751987891dsafaqera
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+      console.log("My otp ==> ", otp);
+
+      await sendEmailOTP(email, otp);
+
+   let user =  await User.create({
+        ...req.body,
+        password: hashedPassword,
+        otp,
+        otpExpiry,
+      });
+
+      successResponse(res, 200, true, "User Signup  Successfully", user);
+  } catch (error) {
+
+    console.log(error)
+
+    if(error.code == 11000) {
+      return res.status(500).json({
+        status:false,
+        message: "this email has been already registred"
+      })
+    }
+    next(error);
+  }
+};
+
+const verifyOtp = async (req, res, next) => {
+  try {
+    const { email, otp } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) return res.status(400).json({
+      status:false,
+      message :"User not found"
+    });
+
+    if (user.otp !== otp) return res.status(400).json({
+      status:false,
+      message :"Invalid OTP"
+    });
+
+    if (user.otpExpiry < new Date()) return res.status(400).json({
+      status:false,
+      message :"OTP Expired"
+    });;
+
+    user.otp = null;
+    user.otpExpiry = null;
+    user.isVerified = true;
+
+    await user.save();
+
+    successResponse(res, 200, true, "Email verified  Successfully");
+  } catch (error) {
+    next(error);
+  }
+};
+
+const forgetPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) throw new Error("User not found!");
+
+    const otp = uuidv4().slice(0, 4); // 8751987891dsafaqera
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+
+    await user.save();
+    await sendEmailOTP(email, otp);
+
+    successResponse(res, 200, true, "otp sent Successfully");
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const { email, otp, password } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) throw new Error("User not found!");
+
+    if (user.otp !== otp) throw new Error("Invalid OTP");
+
+    if (user.otpExpiry < new Date()) throw new Error("OTP Expired!");
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    user.password = hashedPassword;
+    user.isVerified = true;
+    user.otp = null;
+    user.otpExpiry = null;
+
+    await user.save();
+
+    successResponse(res, 200, true, "reset password Successfully");
+  } catch (error) {
+    next(error);
+  }
+};
+
+export { signup, login, verifyOtp, forgetPassword, resetPassword };
