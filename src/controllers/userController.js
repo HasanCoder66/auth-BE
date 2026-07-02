@@ -2,7 +2,7 @@ import { User } from "../models/userSchema.js"
 import jwt from "jsonwebtoken"
 import { successResponse } from "../responseHandler/successHandler.js"
 
-export const getUser = async (req, res) => {
+export const getAllUser = async (req, res) => {
     try {
 
         const {limit, skip, sort} = req.query
@@ -67,6 +67,23 @@ export const getUser = async (req, res) => {
 //     }
 // }
 
+
+export const getSingleUser = async (req, res,next) => {
+    const id = req.params.id;
+    try {
+        if(!id) throw new Error("Id must be provided")
+
+        const user = await User.findById(id)
+
+        if(!user){
+            throw new Error("no user matched")
+        }
+
+        successResponse(res, 200, true, "user found successfully!", user )
+    } catch (error) {
+       next(error) 
+    }
+}
 
 
 
